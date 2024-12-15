@@ -1,0 +1,78 @@
+clc;
+clear;
+close all;
+
+% 1. Video yükleme
+videoFile = 'video.mp4'; % Kendi video dosyanızın adını buraya yazın
+videoReader = VideoReader(videoFile);
+
+% 2. İlk kareyi okuma ve HSV renk uzayına dönüştürme
+frame = readFrame(videoReader);
+hsvFrame = rgb2hsv(frame); % HSV renk uzayına dönüştürme
+
+% Kullanıcıya ilk kareyi renkli olarak göster ve nesne seçtir
+figure;
+imshow(frame);
+title('Nesneyi seçmek için sürükleyerek kutu çizin');
+
+% Kullanıcıdan seçim yapmasını bekleriz, ancak kesinti durumunu kontrol ederiz
+try
+    objectRegion = round(getrect); % Kullanıcıdan seçim alır (rectangle)
+    if isempty(objectRegion)
+        error('Nesne seçimi yapılmadı! Lütfen bir nesne seçin.');
+    end
+catch
+    disp('Nesne seçimi sırasında bir hata oluştu veya seçim iptal edildi.');
+    return; % Hata oluşursa kodu sonlandırır
+end
+
+% Seçilen nesnenin özelliklerini çıkar
+objectTemplate = imcrop(hsvFrame(:, :, 1), objectRegion); % Seçilen bölgenin Hue kanalını al
+
+% 3. Takip işlemi
+disp('Takip başlatılıyor...');
+
+% Yeni bir figür penceresi oluştur
+hFig = figure;
+
+% Video süresince takip
+while hasFrame(videoReader)
+    % Yeni kareyi okuma
+    frame = readFrame(videoReader);
+    hsvFrame = rgb2hsv(frame); % HSV renk uzayına dönüştürme
+
+    % Hue kanalını çıkar
+    hueFrame = hsvFrame(:, :, 1);
+    
+    % Template matching işlemi (Korelasyon)
+    corrMap = normxcorr2(objectTemplate, hueFrame); % Şablon eşleştirme
+
+    % En yüksek korelasyonlu bölgeyi bulma
+    [~, maxIndex] = max(abs(corrMap(:)));
+    [yPeak, xPeak] = ind2sub(size(corrMap), maxIndex);
+
+    % Takip edilen nesnenin koordinatları
+    yOffset = yPeak - size(objectTemplate, 1);
+    xOffset = xPeak - size(objectTemplate, 2);
+    trackedRegion = [xOffset, yOffset, objectRegion(3), objectRegion(4)];
+
+    % Görüntüye manuel kutu ekleme
+    if ishandle(hFig)
+        figure(hFig);
+        imshow(frame); % Görüntüyü ekranda göster
+        hold on;
+        rectangle('Position', trackedRegion, 'EdgeColor', 'g', 'LineWidth', 2); % Nesneye kutu çiz
+        hold off;
+    end
+
+    % Nesneyi güncelle
+    objectTemplate = imcrop(hueFrame, trackedRegion); % Yeni konumda nesne şablonunu güncelle
+
+    % Ekranı güncelle
+    drawnow;
+
+    % Pause süresi video hızına uygun olarak ayarlanacak
+    pause(1 / videoReader.FrameRate); % Gerçek video hızını kullanıyoruz
+end
+
+disp('Video sonlandırıldı.');
